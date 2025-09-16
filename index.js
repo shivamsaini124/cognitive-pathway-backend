@@ -5,6 +5,7 @@ const DB_URL = process.env.DB_URL;
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const compression = require("compression");
 
 // Import routes
 const userRouter = require("./routes/user");
@@ -15,10 +16,55 @@ const timelineRouter = require("./routes/timeline");
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Performance Middleware
+app.use(compression()); // Enable gzip compression
+
+// Enhanced CORS configuration for frontend compatibility
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        const allowedOrigins = [
+            'http://localhost:3000',
+            'http://localhost:3001',
+            'http://localhost:5173',
+            'http://localhost:5174',
+            'http://localhost:8080',
+            process.env.FRONTEND_URL
+        ].filter(Boolean);
+        
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        // For development, allow any localhost origin
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            return callback(null, true);
+        }
+        
+        return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+    optionsSuccessStatus: 200
+}));
+
+// Handle preflight OPTIONS requests
+app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+        res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept,Origin,X-Requested-With');
+        res.header('Access-Control-Allow-Credentials', 'true');
+        return res.sendStatus(200);
+    }
+    next();
+});
+
+app.use(express.json({ limit: '1mb' })); // Reduced limit for better performance
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Request logging middleware (for debugging JWT issues)
 app.use((req, res, next) => {
@@ -73,11 +119,11 @@ app.use((error, req, res, next) => {
 
 const main = async () => {
     try {
-        // Connect to MongoDB
-        await mongoose.connect(DB_URL, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-        });
+        // Connect to MongoDB (simplified for reliability)
+        await mongoose.connect(DB_URL);
+        
+        // Set mongoose options for better performance
+        mongoose.set('strictQuery', false);
         console.log("✅ Connected to MongoDB");
         
         // Start server

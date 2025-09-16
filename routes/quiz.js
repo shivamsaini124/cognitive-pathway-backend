@@ -56,14 +56,22 @@ quizRouter.get('/health', async (req, res) => {
 quizRouter.get("/:quizType", async (req, res) => {
     const startTime = Date.now();
     
+    // Set CORS headers explicitly for frontend compatibility
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
     try {
         const { quizType } = req.params;
+        console.log(`[Quiz Request] Fetching ${quizType} questions...`);
 
         // Validate quiz type quickly
         if (!['class10', 'class12'].includes(quizType)) {
+            console.log(`[Error] Invalid quiz type: ${quizType}`);
             return res.status(400).json({
                 success: false,
-                message: "Invalid quiz type. Must be 'class10' or 'class12'"
+                message: "Invalid quiz type. Must be 'class10' or 'class12'",
+                quizType: quizType
             });
         }
 
@@ -73,26 +81,34 @@ quizRouter.get("/:quizType", async (req, res) => {
         
         if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
             console.log(`[Cache Hit] Quiz ${quizType} served from cache in ${Date.now() - startTime}ms`);
-            return res.json({
+            return res.status(200).json({
                 success: true,
                 message: `${quizType} quiz questions retrieved successfully`,
                 count: cached.data.length,
                 questions: cached.data,
-                cached: true
+                cached: true,
+                timestamp: new Date().toISOString()
             });
         }
 
         // Fetch from database with optimized query
         console.log(`[Cache Miss] Fetching quiz ${quizType} from database...`);
         const questions = await QuizQuestionModel.find({ quizType })
-            .select('question options quizType -_id') // Only select needed fields
+            .select('question options quizType') // Include _id for frontend compatibility
             .lean() // Return plain JS objects for better performance
-            .sort({ createdAt: 1 }); // Consistent ordering
+            .sort({ createdAt: 1 }) // Consistent ordering
+            .exec(); // Explicit execution
+
+        console.log(`[Database] Found ${questions.length} questions for ${quizType}`);
 
         if (questions.length === 0) {
+            console.log(`[Warning] No questions found for ${quizType}`);
             return res.status(404).json({
                 success: false,
-                message: `No questions found for ${quizType} quiz`
+                message: `No questions found for ${quizType} quiz`,
+                count: 0,
+                questions: [],
+                quizType: quizType
             });
         }
 
@@ -103,22 +119,31 @@ quizRouter.get("/:quizType", async (req, res) => {
         });
 
         const responseTime = Date.now() - startTime;
-        console.log(`[DB Query] Quiz ${quizType} fetched from database in ${responseTime}ms`);
+        console.log(`[Success] Quiz ${quizType} fetched from database in ${responseTime}ms`);
 
-        res.json({
+        // Return consistent response format
+        res.status(200).json({
             success: true,
             message: `${quizType} quiz questions retrieved successfully`,
             count: questions.length,
             questions: questions,
-            responseTime: `${responseTime}ms`
+            cached: false,
+            responseTime: `${responseTime}ms`,
+            timestamp: new Date().toISOString()
         });
 
     } catch (error) {
-        console.error(`[Error] Quiz fetch failed in ${Date.now() - startTime}ms:`, error);
+        const responseTime = Date.now() - startTime;
+        console.error(`[Error] Quiz fetch failed in ${responseTime}ms:`, error);
+        
         res.status(500).json({
             success: false,
             message: "Internal server error while fetching quiz questions",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Server error',
+            count: 0,
+            questions: [],
+            responseTime: `${responseTime}ms`,
+            timestamp: new Date().toISOString()
         });
     }
 });
