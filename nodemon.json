@@ -1,0 +1,10 @@
+{
+  "watch": ["routes", "middlewares", "services", "db.js", "index.js"],
+  "ignore": ["test-*.js", "*.test.js", "**/*.test.js", "node_modules/", "*.log"],
+  "ext": "js,json",
+  "exec": "node index.js",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "verbose": false
+}
